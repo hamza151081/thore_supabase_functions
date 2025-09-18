@@ -1,0 +1,817 @@
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
+
+CREATE TABLE public.areas_categories (
+  id uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+  organization_id uuid DEFAULT gen_random_uuid(),
+  name character varying,
+  category character varying,
+  CONSTRAINT areas_categories_pkey PRIMARY KEY (id),
+  CONSTRAINT areas_categories_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id)
+);
+CREATE TABLE public.areas_storage (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  name character varying NOT NULL,
+  display_order smallint,
+  area_category_id uuid NOT NULL,
+  CONSTRAINT areas_storage_pkey PRIMARY KEY (id),
+  CONSTRAINT areas_storage_area_category_id_fkey FOREIGN KEY (area_category_id) REFERENCES public.areas_categories(id)
+);
+CREATE TABLE public.brands (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  name character varying NOT NULL UNIQUE,
+  grade character varying NOT NULL CHECK (grade::text = ANY (enum_range(NULL::brand_grade)::text[])),
+  spareka_ref_change_type character varying,
+  spareka_ref_change_value smallint,
+  sp_serialnbformat_criteria jsonb,
+  archived boolean DEFAULT false,
+  CONSTRAINT brands_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.client_contacts (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  creator text NOT NULL,
+  client_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  email text NOT NULL,
+  archived boolean DEFAULT false,
+  CONSTRAINT client_contacts_pkey PRIMARY KEY (id),
+  CONSTRAINT client_contacts_client_id_fkey FOREIGN KEY (client_id) REFERENCES public.clients(id),
+  CONSTRAINT client_contacts_creator_fkey FOREIGN KEY (creator) REFERENCES public.users(id)
+);
+CREATE TABLE public.client_supplier_groups (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT now(),
+  name character varying NOT NULL,
+  type ARRAY NOT NULL,
+  owner_id uuid NOT NULL,
+  archived boolean NOT NULL DEFAULT false,
+  CONSTRAINT client_supplier_groups_pkey PRIMARY KEY (id),
+  CONSTRAINT client_supplier_groups_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.organizations(id)
+);
+CREATE TABLE public.clients (
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  owner_id uuid NOT NULL,
+  name character varying NOT NULL,
+  group_id uuid,
+  id uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+  archived boolean DEFAULT false,
+  address text,
+  address_complement text,
+  zipcode text,
+  city text,
+  country text,
+  comments text,
+  payment_plan smallint,
+  CONSTRAINT clients_pkey PRIMARY KEY (id),
+  CONSTRAINT clients_group_id_fkey FOREIGN KEY (group_id) REFERENCES public.client_supplier_groups(id),
+  CONSTRAINT clients_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.organizations(id)
+);
+CREATE TABLE public.device_actions (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  creator text NOT NULL,
+  device_id uuid NOT NULL,
+  type character varying NOT NULL,
+  status character varying NOT NULL,
+  sub_area_storage_id uuid,
+  archived boolean DEFAULT false,
+  finished boolean DEFAULT true,
+  last_edit timestamp without time zone NOT NULL DEFAULT now(),
+  CONSTRAINT device_actions_pkey PRIMARY KEY (id),
+  CONSTRAINT device_actions_creator_fkey FOREIGN KEY (creator) REFERENCES public.users(id),
+  CONSTRAINT device_actions_device_id_fkey FOREIGN KEY (device_id) REFERENCES public.devices(id),
+  CONSTRAINT device_actions_sub_area_storage_id_fkey FOREIGN KEY (sub_area_storage_id) REFERENCES public.sub_areas_storage(id)
+);
+CREATE TABLE public.device_actions_aftersales (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  creator text NOT NULL,
+  action_id uuid NOT NULL,
+  type character varying,
+  archived boolean DEFAULT false,
+  accepted boolean NOT NULL,
+  category character varying,
+  sub_category character varying,
+  failure_date timestamp without time zone,
+  nogo_reason text,
+  justified boolean,
+  sale_date timestamp without time zone,
+  justified_comments text,
+  output character varying,
+  status character varying,
+  refused_confirmation boolean,
+  failure_comments text,
+  CONSTRAINT device_actions_aftersales_pkey PRIMARY KEY (id),
+  CONSTRAINT aftersales_action_id_fkey FOREIGN KEY (action_id) REFERENCES public.device_actions(id),
+  CONSTRAINT aftersales_creator_fkey FOREIGN KEY (creator) REFERENCES public.users(id)
+);
+CREATE TABLE public.device_actions_budget (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  creator text NOT NULL,
+  action_id uuid NOT NULL,
+  archived boolean DEFAULT false,
+  purchase_price real,
+  purchase_price_custom real,
+  sale_price real,
+  transport_cost real,
+  diagnostic_cost real,
+  other_cost real,
+  prediag_cost real,
+  max_loss real,
+  prediag_addedvalue real,
+  cleaning_cost real,
+  prelog_cost real,
+  postlog_cost real,
+  pallet_cost real,
+  film_cost real,
+  consumables_cost real,
+  aftersales_cost real,
+  energy_cost real,
+  repair_cost real,
+  margin real,
+  storage_cost real,
+  disassembly_cost real,
+  CONSTRAINT device_actions_budget_pkey PRIMARY KEY (id),
+  CONSTRAINT device_actions_budget_action_id_fkey FOREIGN KEY (action_id) REFERENCES public.device_actions(id),
+  CONSTRAINT device_actions_budget_creator_fkey FOREIGN KEY (creator) REFERENCES public.users(id)
+);
+CREATE TABLE public.device_actions_quality (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  creator text NOT NULL,
+  action_id uuid NOT NULL,
+  archived boolean DEFAULT false,
+  grade character varying,
+  imperfection boolean DEFAULT false,
+  comments text,
+  wholesale boolean DEFAULT false,
+  nogo_reason ARRAY,
+  CONSTRAINT device_actions_quality_pkey PRIMARY KEY (id),
+  CONSTRAINT quality_action_id_fkey FOREIGN KEY (action_id) REFERENCES public.device_actions(id),
+  CONSTRAINT quality_creator_fkey FOREIGN KEY (creator) REFERENCES public.users(id)
+);
+CREATE TABLE public.device_actions_reception (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  creator text NOT NULL,
+  action_id uuid NOT NULL,
+  archived boolean DEFAULT false,
+  grade character varying NOT NULL,
+  compliance boolean NOT NULL,
+  prequalif ARRAY,
+  prequalif_comments text,
+  grade_final character varying,
+  CONSTRAINT device_actions_reception_pkey PRIMARY KEY (id),
+  CONSTRAINT device_actions_reception_action_id_fkey FOREIGN KEY (action_id) REFERENCES public.device_actions(id),
+  CONSTRAINT device_actions_reception_creator_fkey FOREIGN KEY (creator) REFERENCES public.users(id)
+);
+CREATE TABLE public.device_actions_reparation_failures (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  creator text NOT NULL,
+  reparation_id uuid NOT NULL,
+  micro_failure_id uuid,
+  archived boolean DEFAULT false,
+  CONSTRAINT device_actions_reparation_failures_pkey PRIMARY KEY (id),
+  CONSTRAINT device_actions_reparation_failures_creator_fkey FOREIGN KEY (creator) REFERENCES public.users(id),
+  CONSTRAINT device_actions_reparation_failures_micro_failure_id_fkey FOREIGN KEY (micro_failure_id) REFERENCES public.device_micro_failures(id),
+  CONSTRAINT device_actions_reparation_failures_reparation_id_fkey FOREIGN KEY (reparation_id) REFERENCES public.device_actions_reparations(id)
+);
+CREATE TABLE public.device_actions_reparation_tests (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  creator text NOT NULL,
+  reparation_id uuid NOT NULL,
+  test_id uuid NOT NULL,
+  type character varying NOT NULL,
+  archived boolean DEFAULT false,
+  CONSTRAINT device_actions_reparation_tests_pkey PRIMARY KEY (id),
+  CONSTRAINT device_actions_reparation_tests_creator_fkey FOREIGN KEY (creator) REFERENCES public.users(id),
+  CONSTRAINT device_actions_reparation_tests_reparation_id_fkey FOREIGN KEY (reparation_id) REFERENCES public.device_actions_reparations(id),
+  CONSTRAINT device_actions_reparation_tests_test_id_fkey FOREIGN KEY (test_id) REFERENCES public.device_tests(id)
+);
+CREATE TABLE public.device_actions_reparations (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  creator text NOT NULL,
+  action_id uuid NOT NULL,
+  error_code text,
+  comments text,
+  status character varying,
+  type character varying,
+  archived boolean DEFAULT false,
+  functional_device boolean DEFAULT false,
+  refill_done boolean DEFAULT false,
+  disassembly_reason character varying,
+  CONSTRAINT device_actions_reparations_pkey PRIMARY KEY (id),
+  CONSTRAINT reparations_action_id_fkey FOREIGN KEY (action_id) REFERENCES public.device_actions(id),
+  CONSTRAINT reparations_creator_fkey FOREIGN KEY (creator) REFERENCES public.users(id)
+);
+CREATE TABLE public.device_actions_sales_lot (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  creator text NOT NULL,
+  action_id uuid NOT NULL,
+  archived boolean DEFAULT false,
+  type character varying NOT NULL,
+  custom_sale_price real,
+  status character varying NOT NULL,
+  sale_lot_id uuid NOT NULL,
+  CONSTRAINT device_actions_sales_lot_pkey PRIMARY KEY (id),
+  CONSTRAINT device_actions_sales_lot_action_id_fkey FOREIGN KEY (action_id) REFERENCES public.device_actions(id),
+  CONSTRAINT device_actions_sales_lot_creator_fkey FOREIGN KEY (creator) REFERENCES public.users(id),
+  CONSTRAINT device_actions_sales_lot_sale_lot_id_fkey FOREIGN KEY (sale_lot_id) REFERENCES public.sales_purchase_lots(id)
+);
+CREATE TABLE public.device_macro_failures (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  name character varying NOT NULL,
+  device_service_sub_category_id uuid,
+  organization_id uuid,
+  CONSTRAINT device_macro_failures_pkey PRIMARY KEY (id),
+  CONSTRAINT macro_failures_device_service_sub_category_id_fkey FOREIGN KEY (device_service_sub_category_id) REFERENCES public.device_service_sub_categories(id),
+  CONSTRAINT macro_failures_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id)
+);
+CREATE TABLE public.device_micro_failures (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  name character varying NOT NULL,
+  macro_failure_id uuid,
+  CONSTRAINT device_micro_failures_pkey PRIMARY KEY (id),
+  CONSTRAINT micro_failures_macro_failure_id_fkey FOREIGN KEY (macro_failure_id) REFERENCES public.device_macro_failures(id)
+);
+CREATE TABLE public.device_ownership_transfer (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  device_id uuid NOT NULL,
+  old_owner uuid NOT NULL,
+  new_owner uuid NOT NULL,
+  CONSTRAINT device_ownership_transfer_pkey PRIMARY KEY (id),
+  CONSTRAINT device_ownership_transfer_device_id_fkey FOREIGN KEY (device_id) REFERENCES public.devices(id),
+  CONSTRAINT device_ownership_transfer_new_owner_fkey FOREIGN KEY (new_owner) REFERENCES public.organizations(id),
+  CONSTRAINT device_ownership_transfer_old_owner_fkey FOREIGN KEY (old_owner) REFERENCES public.organizations(id)
+);
+CREATE TABLE public.device_references (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  model character varying NOT NULL UNIQUE,
+  brand_id uuid,
+  device_service_sub_category_id uuid,
+  price_new double precision,
+  color text,
+  year_production bigint,
+  length real,
+  width real,
+  height real,
+  parcel_size character varying,
+  spareka_model character varying,
+  pose_type character varying,
+  eans ARRAY,
+  internal_refs ARRAY,
+  weight real,
+  wash_capacity real,
+  dry_capacity real,
+  efficiency_class ARRAY,
+  archived boolean DEFAULT false,
+  other_characteristics text,
+  CONSTRAINT device_references_pkey PRIMARY KEY (id),
+  CONSTRAINT device_references_brand_id_fkey FOREIGN KEY (brand_id) REFERENCES public.brands(id),
+  CONSTRAINT device_references_device_service_sub_category_id_fkey FOREIGN KEY (device_service_sub_category_id) REFERENCES public.device_service_sub_categories(id)
+);
+CREATE TABLE public.device_references_actions (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  device_reference_id uuid NOT NULL,
+  brand_id uuid,
+  device_service_sub_category_id uuid,
+  price_new double precision,
+  color text,
+  year_production bigint,
+  length real,
+  width real,
+  height real,
+  parcel_size character varying,
+  spareka_model character varying,
+  weight real,
+  pose_type character varying,
+  eans ARRAY,
+  internal_refs ARRAY,
+  wash_capacity real,
+  dry_capacity real,
+  efficiency_class ARRAY,
+  other_characteristics text,
+  CONSTRAINT device_references_actions_pkey PRIMARY KEY (id),
+  CONSTRAINT device_references_actions_brand_id_fkey FOREIGN KEY (brand_id) REFERENCES public.brands(id),
+  CONSTRAINT devices_references_actions_device_reference_id_fkey FOREIGN KEY (device_reference_id) REFERENCES public.device_references(id)
+);
+CREATE TABLE public.device_service_categories (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  name character varying NOT NULL UNIQUE,
+  device_sub_service_id uuid,
+  pose_type_options ARRAY,
+  CONSTRAINT device_service_categories_pkey PRIMARY KEY (id),
+  CONSTRAINT device_service_categories_device_sub_service_id_fkey FOREIGN KEY (device_sub_service_id) REFERENCES public.device_sub_services(id)
+);
+CREATE TABLE public.device_service_sub_categories (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  name character varying NOT NULL UNIQUE,
+  device_service_category_id uuid,
+  diag_duration real,
+  length real,
+  width real,
+  height real,
+  parcel_size character varying,
+  weight real,
+  repair_duration real,
+  youzd_subcategory_id uuid,
+  youzd_name character varying,
+  CONSTRAINT device_service_sub_categories_pkey PRIMARY KEY (id),
+  CONSTRAINT device_service_sub_categories_device_service_category_id_fkey FOREIGN KEY (device_service_category_id) REFERENCES public.device_service_categories(id),
+  CONSTRAINT device_service_sub_categories_youzd_subcategory_id_fkey FOREIGN KEY (youzd_subcategory_id) REFERENCES public.youzd_subcategories(id)
+);
+CREATE TABLE public.device_services (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  name character varying NOT NULL UNIQUE,
+  CONSTRAINT device_services_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.device_sub_services (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  name character varying NOT NULL UNIQUE,
+  device_service_id uuid,
+  CONSTRAINT device_sub_services_pkey PRIMARY KEY (id),
+  CONSTRAINT device_sub_services_device_service_id_fkey FOREIGN KEY (device_service_id) REFERENCES public.device_services(id)
+);
+CREATE TABLE public.device_tests (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  name character varying NOT NULL,
+  device_service_sub_category_id uuid,
+  organization_id uuid,
+  display_order smallint,
+  type character varying,
+  archived boolean NOT NULL DEFAULT false,
+  CONSTRAINT device_tests_pkey PRIMARY KEY (id),
+  CONSTRAINT device_tests_device_service_sub_category_id_fkey FOREIGN KEY (device_service_sub_category_id) REFERENCES public.device_service_sub_categories(id),
+  CONSTRAINT device_tests_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id)
+);
+CREATE TABLE public.devices (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  barcode character varying NOT NULL CHECK (length(barcode::text) = 6),
+  device_reference_id uuid,
+  archived boolean NOT NULL DEFAULT false,
+  exclude_youzd boolean NOT NULL DEFAULT false,
+  imported_youzd boolean NOT NULL DEFAULT false,
+  service_provision_reference text,
+  diagnostic_duration real,
+  reparation_duration real,
+  CONSTRAINT devices_pkey PRIMARY KEY (id),
+  CONSTRAINT devices_device_reference_id_fkey FOREIGN KEY (device_reference_id) REFERENCES public.device_references(id)
+);
+CREATE TABLE public.devices_files (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  device_id uuid,
+  device_action_id uuid,
+  file_url text NOT NULL,
+  type character varying NOT NULL,
+  archived boolean DEFAULT false,
+  created_at timestamp without time zone NOT NULL DEFAULT now(),
+  device_model_id uuid,
+  CONSTRAINT devices_files_pkey PRIMARY KEY (id),
+  CONSTRAINT devices_files_device_action_id_fkey FOREIGN KEY (device_action_id) REFERENCES public.device_actions(id),
+  CONSTRAINT devices_files_device_id_fkey FOREIGN KEY (device_id) REFERENCES public.devices(id),
+  CONSTRAINT devices_files_device_model_id_fkey FOREIGN KEY (device_model_id) REFERENCES public.device_references(id)
+);
+CREATE TABLE public.notifications (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+  sender text NOT NULL,
+  recipients ARRAY NOT NULL,
+  title text NOT NULL,
+  body text NOT NULL,
+  link_type text NOT NULL,
+  link_value text NOT NULL,
+  link_value2 text,
+  read boolean DEFAULT false,
+  CONSTRAINT notifications_pkey PRIMARY KEY (id),
+  CONSTRAINT notifications_sender_fkey FOREIGN KEY (sender) REFERENCES public.users(id)
+);
+CREATE TABLE public.organigram (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  creator text,
+  manager text,
+  employee text,
+  archived boolean DEFAULT false,
+  CONSTRAINT organigram_pkey PRIMARY KEY (id),
+  CONSTRAINT organigramme_creator_fkey FOREIGN KEY (creator) REFERENCES public.users(id),
+  CONSTRAINT organigramme_employee_fkey FOREIGN KEY (employee) REFERENCES public.users(id),
+  CONSTRAINT organigramme_manager_fkey FOREIGN KEY (manager) REFERENCES public.users(id)
+);
+CREATE TABLE public.organization_device_costs (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  organization_id uuid,
+  device_service_sub_category_id uuid,
+  cost character varying NOT NULL,
+  value real,
+  criteria character varying,
+  criteria_value real,
+  CONSTRAINT organization_device_costs_pkey PRIMARY KEY (id),
+  CONSTRAINT organization_device_costs_device_service_sub_category_id_fkey FOREIGN KEY (device_service_sub_category_id) REFERENCES public.device_service_sub_categories(id),
+  CONSTRAINT organization_device_costs_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id)
+);
+CREATE TABLE public.organizations (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT now(),
+  name character varying NOT NULL,
+  type ARRAY NOT NULL,
+  const_cost_log_pre real,
+  const_cost_log_post real,
+  const_cost_film real,
+  const_cost_consumables real,
+  const_cost_energy real,
+  const_cost_disassembly real,
+  prequalif ARRAY,
+  const_cost_aftersales_rate real,
+  const_cost_margin_rate real,
+  CONSTRAINT organizations_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.sale_purchase_lot_devices (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  creator text,
+  sale_purchase_lot_id uuid,
+  device_id uuid,
+  archived boolean DEFAULT false,
+  restore_failed boolean DEFAULT false,
+  type character varying NOT NULL DEFAULT ''::character varying,
+  CONSTRAINT sale_purchase_lot_devices_pkey PRIMARY KEY (id),
+  CONSTRAINT sale_purchase_lot_devices_creator_fkey FOREIGN KEY (creator) REFERENCES public.users(id),
+  CONSTRAINT sale_purchase_lot_devices_device_id_fkey FOREIGN KEY (device_id) REFERENCES public.devices(id),
+  CONSTRAINT sale_purchase_lot_devices_sale_purchase_lot_id_fkey FOREIGN KEY (sale_purchase_lot_id) REFERENCES public.sales_purchase_lots(id)
+);
+CREATE TABLE public.sales_invoice_import (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  device_id uuid,
+  sale_price real,
+  percent_new_price real,
+  CONSTRAINT sales_invoice_import_pkey PRIMARY KEY (id),
+  CONSTRAINT sales_invoice_import_device_id_fkey FOREIGN KEY (device_id) REFERENCES public.devices(id)
+);
+CREATE TABLE public.sales_purchase_lot_actions (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  sales_purchase_lot_id uuid NOT NULL,
+  creator text NOT NULL,
+  status character varying,
+  type character varying NOT NULL,
+  device_pricing_mode character varying,
+  device_pricing_value real,
+  transport_pricing_mode character varying,
+  transport_pricing_value real,
+  CONSTRAINT sales_purchase_lot_actions_pkey PRIMARY KEY (id),
+  CONSTRAINT sales_purchase_lot_actions_creator_fkey FOREIGN KEY (creator) REFERENCES public.users(id)
+);
+CREATE TABLE public.sales_purchase_lots (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  creator text NOT NULL,
+  supplier_id uuid NOT NULL,
+  client_id uuid NOT NULL,
+  name character varying NOT NULL,
+  type character varying,
+  hidden boolean DEFAULT false,
+  archived boolean DEFAULT false,
+  device_pricing_mode character varying,
+  device_pricing_value real,
+  transport_pricing_mode character varying,
+  transport_pricing_value real,
+  CONSTRAINT sales_purchase_lots_pkey PRIMARY KEY (id),
+  CONSTRAINT sales_purchase_lots_client_id_fkey FOREIGN KEY (client_id) REFERENCES public.clients(id),
+  CONSTRAINT sales_purchase_lots_creator_fkey FOREIGN KEY (creator) REFERENCES public.users(id),
+  CONSTRAINT sales_purchase_lots_supplier_id_fkey FOREIGN KEY (supplier_id) REFERENCES public.suppliers(id)
+);
+CREATE TABLE public.sales_purchase_pricing_matrix (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  supplier_id uuid NOT NULL,
+  client_id uuid NOT NULL,
+  internal_grade character varying NOT NULL,
+  brand_grade character varying NOT NULL,
+  const_price real,
+  const_percent real,
+  transport_price real,
+  device_service_sub_category_id uuid,
+  CONSTRAINT sales_purchase_pricing_matrix_pkey PRIMARY KEY (id),
+  CONSTRAINT sales_purchase_pricing_matrix_client_id_fkey FOREIGN KEY (client_id) REFERENCES public.clients(id),
+  CONSTRAINT sales_purchase_pricing_matrix_device_service_sub_category__fkey FOREIGN KEY (device_service_sub_category_id) REFERENCES public.device_service_sub_categories(id),
+  CONSTRAINT sales_purchase_pricing_matrix_supplier_id_fkey FOREIGN KEY (supplier_id) REFERENCES public.suppliers(id)
+);
+CREATE TABLE public.sparepart_actions (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  creator text NOT NULL,
+  sparepart_id uuid NOT NULL,
+  type character varying NOT NULL,
+  sub_area_storage_id uuid,
+  in_stock boolean DEFAULT true,
+  origin character varying,
+  origin_device_id uuid,
+  archived boolean DEFAULT false,
+  sparepart_reference_id uuid,
+  comments text,
+  CONSTRAINT sparepart_actions_pkey PRIMARY KEY (id),
+  CONSTRAINT sparepart_actions_creator_fkey FOREIGN KEY (creator) REFERENCES public.users(id),
+  CONSTRAINT sparepart_actions_origin_device_id_fkey FOREIGN KEY (origin_device_id) REFERENCES public.devices(id),
+  CONSTRAINT sparepart_actions_sparepart_id_fkey FOREIGN KEY (sparepart_id) REFERENCES public.spareparts(id),
+  CONSTRAINT sparepart_actions_sparepart_reference_id_fkey FOREIGN KEY (sparepart_reference_id) REFERENCES public.sparepart_references(id),
+  CONSTRAINT sparepart_actions_sub_area_storage_id_fkey FOREIGN KEY (sub_area_storage_id) REFERENCES public.sub_areas_storage(id)
+);
+CREATE TABLE public.sparepart_categories (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  name character varying NOT NULL UNIQUE,
+  CONSTRAINT sparepart_categories_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.sparepart_device_references (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  sparepart_reference_id uuid NOT NULL,
+  model_id uuid NOT NULL,
+  archived boolean NOT NULL DEFAULT false,
+  CONSTRAINT sparepart_device_references_pkey PRIMARY KEY (id),
+  CONSTRAINT sparepart_device_references_model_id_fkey FOREIGN KEY (model_id) REFERENCES public.device_references(id),
+  CONSTRAINT sparepart_device_references_sparepart_reference_id_fkey FOREIGN KEY (sparepart_reference_id) REFERENCES public.sparepart_references(id)
+);
+CREATE TABLE public.sparepart_reference_actions (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  creator text NOT NULL,
+  sparepart_reference_id uuid,
+  price_new real,
+  reference_supplier character varying,
+  first_time_origin character varying,
+  waiting_time_delivery character varying,
+  source_supplier character varying,
+  link_product_info text,
+  comments text,
+  unavailable boolean DEFAULT false,
+  archived boolean DEFAULT false,
+  CONSTRAINT sparepart_reference_actions_pkey PRIMARY KEY (id),
+  CONSTRAINT sparepart_reference_actions_creator_fkey FOREIGN KEY (creator) REFERENCES public.users(id),
+  CONSTRAINT sparepart_reference_actions_sparepart_reference_id_fkey FOREIGN KEY (sparepart_reference_id) REFERENCES public.sparepart_references(id)
+);
+CREATE TABLE public.sparepart_references (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  serial_number character varying UNIQUE,
+  price_new real,
+  reference_supplier character varying,
+  first_time_origin character varying,
+  waiting_time_delivery character varying,
+  unavailable boolean DEFAULT false,
+  archived boolean DEFAULT false,
+  creator text NOT NULL,
+  source_supplier character varying,
+  link_product_info text,
+  comments text,
+  sparepart_type_id uuid,
+  CONSTRAINT sparepart_references_pkey PRIMARY KEY (id),
+  CONSTRAINT sparepart_references_creator_fkey FOREIGN KEY (creator) REFERENCES public.users(id),
+  CONSTRAINT sparepart_references_sparepart_type_id_fkey FOREIGN KEY (sparepart_type_id) REFERENCES public.sparepart_types(id)
+);
+CREATE TABLE public.sparepart_requests (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  creator text NOT NULL,
+  sparepart_reference_id uuid,
+  comments text,
+  quantity bigint,
+  archived boolean DEFAULT false,
+  device_id uuid NOT NULL,
+  price_new_request real,
+  sparepart_type_id uuid,
+  CONSTRAINT sparepart_requests_pkey PRIMARY KEY (id),
+  CONSTRAINT sparepart_requests_creator_fkey FOREIGN KEY (creator) REFERENCES public.users(id),
+  CONSTRAINT sparepart_requests_device_id_fkey FOREIGN KEY (device_id) REFERENCES public.devices(id),
+  CONSTRAINT sparepart_requests_sparepart_reference_id_fkey FOREIGN KEY (sparepart_reference_id) REFERENCES public.sparepart_references(id),
+  CONSTRAINT sparepart_requests_sparepart_type_id_fkey FOREIGN KEY (sparepart_type_id) REFERENCES public.sparepart_types(id)
+);
+CREATE TABLE public.sparepart_requests_actions (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  creator text NOT NULL,
+  sparepart_request_id uuid,
+  status character varying NOT NULL,
+  non_order character varying,
+  archived boolean DEFAULT false,
+  CONSTRAINT sparepart_requests_actions_pkey PRIMARY KEY (id),
+  CONSTRAINT sparepart_requests_actions_creator_fkey FOREIGN KEY (creator) REFERENCES public.users(id),
+  CONSTRAINT sparepart_requests_actions_sparepart_request_id_fkey FOREIGN KEY (sparepart_request_id) REFERENCES public.sparepart_requests(id)
+);
+CREATE TABLE public.sparepart_requests_details (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  creator text NOT NULL,
+  sparepart_request_id uuid,
+  unavailable boolean DEFAULT false,
+  price_new_request real,
+  reference_supplier text,
+  source_supplier character varying,
+  waiting_time_delivery character varying,
+  CONSTRAINT sparepart_requests_details_pkey PRIMARY KEY (id),
+  CONSTRAINT sparepart_requests_details_creator_fkey FOREIGN KEY (creator) REFERENCES public.users(id),
+  CONSTRAINT sparepart_requests_details_sparepart_request_id_fkey FOREIGN KEY (sparepart_request_id) REFERENCES public.sparepart_requests(id),
+  CONSTRAINT sparepart_requests_details_sparepart_request_id_fkey1 FOREIGN KEY (sparepart_request_id) REFERENCES public.sparepart_requests(id)
+);
+CREATE TABLE public.sparepart_requests_issues (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  creator text NOT NULL DEFAULT gen_random_uuid(),
+  type character varying,
+  conclusion character varying,
+  sparepart_request_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  archived boolean DEFAULT false,
+  last_edit timestamp without time zone NOT NULL DEFAULT now(),
+  last_editor text,
+  CONSTRAINT sparepart_requests_issues_pkey PRIMARY KEY (id),
+  CONSTRAINT sparepart_requests_issues_creator_fkey FOREIGN KEY (creator) REFERENCES public.users(id),
+  CONSTRAINT sparepart_requests_issues_last_editor_fkey FOREIGN KEY (last_editor) REFERENCES public.users(id),
+  CONSTRAINT sparepart_requests_issues_sparepart_request_id_fkey FOREIGN KEY (sparepart_request_id) REFERENCES public.sparepart_requests(id)
+);
+CREATE TABLE public.sparepart_requests_sp_stock (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  creator text,
+  sparepart_request_id uuid DEFAULT gen_random_uuid(),
+  sparepart_id uuid DEFAULT gen_random_uuid(),
+  archived boolean DEFAULT false,
+  CONSTRAINT sparepart_requests_sp_stock_pkey PRIMARY KEY (id),
+  CONSTRAINT sparepart_requests_sp_stock_creator_fkey FOREIGN KEY (creator) REFERENCES public.users(id),
+  CONSTRAINT sparepart_requests_sp_stock_sparepart_id_fkey FOREIGN KEY (sparepart_id) REFERENCES public.spareparts(id),
+  CONSTRAINT sparepart_requests_sp_stock_sparepart_request_id_fkey FOREIGN KEY (sparepart_request_id) REFERENCES public.sparepart_requests(id)
+);
+CREATE TABLE public.sparepart_service_sub_categories (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  device_service_sub_category_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  nomenclature boolean NOT NULL DEFAULT true,
+  archived boolean DEFAULT false,
+  sparepart_type_id uuid,
+  sparepart_sub_category_id uuid,
+  CONSTRAINT sparepart_service_sub_categories_pkey PRIMARY KEY (id),
+  CONSTRAINT sparepart_service_sub_categor_device_service_sub_category__fkey FOREIGN KEY (device_service_sub_category_id) REFERENCES public.device_service_sub_categories(id),
+  CONSTRAINT sparepart_service_sub_categories_sparepart_sub_category_id_fkey FOREIGN KEY (sparepart_sub_category_id) REFERENCES public.sparepart_sub_categories(id),
+  CONSTRAINT sparepart_service_sub_categories_sparepart_type_id_fkey FOREIGN KEY (sparepart_type_id) REFERENCES public.sparepart_types(id)
+);
+CREATE TABLE public.sparepart_sub_categories (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  name character varying NOT NULL,
+  sparepart_category_id uuid,
+  CONSTRAINT sparepart_sub_categories_pkey PRIMARY KEY (id),
+  CONSTRAINT sparepart_sub_categories_sparepart_category_id_fkey FOREIGN KEY (sparepart_category_id) REFERENCES public.sparepart_categories(id)
+);
+CREATE TABLE public.sparepart_types (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  archived boolean NOT NULL DEFAULT false,
+  CONSTRAINT sparepart_types_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.spareparts (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  creator text NOT NULL,
+  barcode character varying NOT NULL CHECK (length(barcode::text) = 6),
+  sparepart_reference_id uuid,
+  archived boolean DEFAULT false,
+  barcode_legacy character varying,
+  sparepart_type_id uuid,
+  origin_device_id uuid,
+  CONSTRAINT spareparts_pkey PRIMARY KEY (id),
+  CONSTRAINT spareparts_creator_fkey FOREIGN KEY (creator) REFERENCES public.users(id),
+  CONSTRAINT spareparts_sparepart_reference_id_fkey FOREIGN KEY (sparepart_reference_id) REFERENCES public.sparepart_references(id),
+  CONSTRAINT spareparts_sparepart_type_id_fkey FOREIGN KEY (sparepart_type_id) REFERENCES public.sparepart_types(id),
+  CONSTRAINT spareparts_origin_device_id_fkey FOREIGN KEY (origin_device_id) REFERENCES public.devices(id)
+);
+CREATE TABLE public.spareparts_files (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  sparepart_reference_id uuid,
+  sparepart_request_id uuid,
+  file_url text NOT NULL,
+  archived boolean DEFAULT false,
+  created_at timestamp without time zone NOT NULL DEFAULT now(),
+  type character varying,
+  CONSTRAINT spareparts_files_pkey PRIMARY KEY (id),
+  CONSTRAINT spareparts_files_sparepart_reference_id_fkey FOREIGN KEY (sparepart_reference_id) REFERENCES public.spareparts(id),
+  CONSTRAINT spareparts_files_sparepart_request_id_fkey FOREIGN KEY (sparepart_request_id) REFERENCES public.sparepart_requests(id)
+);
+CREATE TABLE public.sub_areas_storage (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  areas_storage_id uuid NOT NULL,
+  name character varying NOT NULL,
+  capacity smallint,
+  display_order smallint,
+  barcode character varying,
+  CONSTRAINT sub_areas_storage_pkey PRIMARY KEY (id),
+  CONSTRAINT sub_areas_storage_areas_storage_id_fkey FOREIGN KEY (areas_storage_id) REFERENCES public.areas_storage(id)
+);
+CREATE TABLE public.suppliers (
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  owner_id uuid NOT NULL,
+  name character varying NOT NULL,
+  group_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  salesman_lot boolean NOT NULL DEFAULT true,
+  id uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+  archived boolean DEFAULT false,
+  lot_naming character varying,
+  preferred_pricing character varying,
+  CONSTRAINT suppliers_pkey PRIMARY KEY (id),
+  CONSTRAINT suppliers_group_id_fkey FOREIGN KEY (group_id) REFERENCES public.client_supplier_groups(id),
+  CONSTRAINT suppliers_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.organizations(id)
+);
+CREATE TABLE public.test (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  subcat uuid DEFAULT gen_random_uuid(),
+  subcat_youzd uuid,
+  nb smallint,
+  youzd_name text,
+  CONSTRAINT test_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.users (
+  id text NOT NULL UNIQUE,
+  created_at timestamp without time zone DEFAULT now(),
+  organization_id uuid NOT NULL,
+  email text NOT NULL UNIQUE,
+  name character varying NOT NULL,
+  roles ARRAY,
+  deleted boolean NOT NULL DEFAULT false,
+  replacer text,
+  notif_auth boolean DEFAULT true,
+  hourly_cost real,
+  CONSTRAINT users_pkey PRIMARY KEY (id),
+  CONSTRAINT users_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id),
+  CONSTRAINT users_replacer_fkey FOREIGN KEY (replacer) REFERENCES public.users(id)
+);
+CREATE TABLE public.users_actions (
+  id uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+  created_at timestamp without time zone DEFAULT now(),
+  email text NOT NULL UNIQUE,
+  name character varying NOT NULL,
+  roles ARRAY,
+  deleted boolean NOT NULL DEFAULT false,
+  replacer text,
+  notif_auth boolean DEFAULT true,
+  hourly_cost real,
+  user_id text NOT NULL,
+  CONSTRAINT users_actions_pkey PRIMARY KEY (id),
+  CONSTRAINT users_actions_replacer_fkey FOREIGN KEY (replacer) REFERENCES public.users(id),
+  CONSTRAINT users_actions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.users_holidays (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  creator text,
+  user_id text,
+  date_start date,
+  date_end date,
+  archived boolean DEFAULT false,
+  CONSTRAINT users_holidays_pkey PRIMARY KEY (id),
+  CONSTRAINT users_holidays_creator_fkey FOREIGN KEY (creator) REFERENCES public.users(id),
+  CONSTRAINT users_holidays_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.users_invitations (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp without time zone,
+  creator_id text,
+  organization_id uuid,
+  invited_email text NOT NULL,
+  invited_name text NOT NULL,
+  invited_roles ARRAY NOT NULL,
+  invited_replacer text,
+  invited_employees ARRAY,
+  invited_hourly_cost real,
+  CONSTRAINT users_invitations_pkey PRIMARY KEY (id),
+  CONSTRAINT users_invitations_creator_id_fkey FOREIGN KEY (creator_id) REFERENCES public.users(id),
+  CONSTRAINT users_invitations_invited_replacer_fkey FOREIGN KEY (invited_replacer) REFERENCES public.users(id),
+  CONSTRAINT users_invitations_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id)
+);
+CREATE TABLE public.youzd_categories (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name character varying,
+  CONSTRAINT youzd_categories_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.youzd_subcategories (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name character varying,
+  youzd_category_id uuid DEFAULT gen_random_uuid(),
+  CONSTRAINT youzd_subcategories_pkey PRIMARY KEY (id),
+  CONSTRAINT youzd_subcategories_youzd_category_id_fkey FOREIGN KEY (youzd_category_id) REFERENCES public.youzd_categories(id)
+);
