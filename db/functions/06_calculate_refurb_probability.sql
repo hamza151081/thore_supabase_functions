@@ -1,11 +1,7 @@
--- ================================================================
--- REFURBISHMENT PROBABILITY CALCULATION
--- Requirement: "Calcul des probabilités de reconditionnement"
--- ================================================================
 CREATE OR REPLACE FUNCTION calculate_refurb_probability(
     p_device_id UUID
 )
-RETURNS NUMERIC AS $$
+RETURNS NUMERIC AS $
 DECLARE
     v_probability NUMERIC;
     v_brand_id UUID;
@@ -21,7 +17,7 @@ BEGIN
     JOIN device_references dr ON dr.id = d.device_reference_id
     WHERE d.id = p_device_id;
     
-    -- Calculate probability for brand + subcategory
+    -- Try brand + subcategory first (30+ devices needed)
     SELECT 
         COUNT(CASE WHEN dar_term.id IS NOT NULL THEN 1 END) as refurb,
         COUNT(CASE WHEN da_last.status = 'Démontage terminé' THEN 1 END) as deee
@@ -84,6 +80,6 @@ BEGIN
         RETURN COALESCE(v_probability, 0.5);
     END IF;
     
-    RETURN 0.5;
+    RETURN 0.5; -- Default 50% if no data
 END;
-$$ LANGUAGE plpgsql;
+$ LANGUAGE plpgsql;

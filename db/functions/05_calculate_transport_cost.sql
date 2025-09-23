@@ -1,7 +1,3 @@
--- ================================================================
--- TRANSPORT COST CALCULATION
--- Requirement: "Achat_transport" section
--- ================================================================
 CREATE OR REPLACE FUNCTION calculate_transport_cost(
     p_device_id UUID
 )
@@ -15,7 +11,7 @@ DECLARE
     v_supplier_id UUID;
     v_reception_grade VARCHAR;
     v_brand_grade VARCHAR;
-    v_organization_id UUID;
+    v_device_owner_org UUID;
 BEGIN
     -- Get purchase lot transport information
     SELECT spl.transport_pricing_mode, spl.transport_pricing_value, spl.id, spl.supplier_id
@@ -29,11 +25,10 @@ BEGIN
     
     -- Get device owner organization
     SELECT u.organization_id
-    INTO v_organization_id
-    FROM devices d
-    JOIN device_actions da ON da.device_id = d.id
+    INTO v_device_owner_org
+    FROM device_actions da
     JOIN users u ON u.id = da.creator
-    WHERE d.id = p_device_id
+    WHERE da.device_id = p_device_id
     LIMIT 1;
     
     -- Get reception grade and brand grade
@@ -49,12 +44,14 @@ BEGIN
     ORDER BY da.created_at DESC
     LIMIT 1;
     
-    -- Calculate based on pricing mode
+    -- Calculate based on transport pricing mode
     CASE v_pricing_mode
         WHEN 'fixed' THEN
+            -- Fixed transport cost per device
             v_transport_cost := v_pricing_value;
             
         WHEN 'shared' THEN
+            -- Shared transport cost divided by number of devices in lot
             SELECT COUNT(*)
             INTO v_device_count
             FROM sale_purchase_lot_devices
@@ -64,11 +61,12 @@ BEGIN
             v_transport_cost := v_pricing_value / NULLIF(v_device_count, 0);
             
         WHEN 'matrix' THEN
+            -- Matrix pricing using transport_price
             SELECT sppm.transport_price
             INTO v_transport_cost
             FROM sales_purchase_pricing_matrix sppm
             WHERE sppm.supplier_id = v_supplier_id
-            AND sppm.client_id = v_organization_id
+            AND sppm.client_id = v_device_owner_org
             AND sppm.internal_grade = v_reception_grade
             AND sppm.brand_grade = v_brand_grade;
             
