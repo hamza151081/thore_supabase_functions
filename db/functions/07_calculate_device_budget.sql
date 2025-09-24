@@ -1,3 +1,11 @@
+-- ================================================================
+-- STREAMLINED BUDGET CALCULATION WITH DIRECT TRIGGER INTEGRATION
+-- ================================================================
+
+-- ================================================================
+-- UNIFIED BUDGET CALCULATION FUNCTION FOR TRIGGERS
+-- Extracts all needed info from trigger context automatically
+-- ================================================================
 CREATE OR REPLACE FUNCTION calculate_and_store_budget()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -33,14 +41,13 @@ DECLARE
     v_added_value NUMERIC;
     v_refurb_probability NUMERIC;
     v_result_value NUMERIC;
-    v_max_loss NUMERIC;
 BEGIN
     -- Determine stage and extract context based on trigger source
     IF TG_TABLE_NAME = 'device_actions' THEN
         v_device_id := NEW.device_id;
         SELECT organization_id INTO v_organization_id FROM users WHERE id = NEW.creator;
         
-        -- Handle all cases based on type and status
+        -- Handle device_actions cases based on type and status
         IF NEW.type = 'Réception' THEN
             -- Check if price_new exists (per documentation requirement)
             SELECT dr.price_new
@@ -59,15 +66,7 @@ BEGIN
         ELSIF NEW.type = 'Mise en test' THEN
             v_stage := 'post_test';
             
-        ELSIF NEW.status = 'En cours de réparation' THEN
-            v_stage := 'post_diag';
-            
-        ELSIF NEW.status = 'Terminé' THEN  
-            v_stage := 'repaired';
-            
-        ELSIF NEW.status = 'Abandon - démontage' THEN
-            v_stage := 'deee';
-            
+        -- Final status triggers
         ELSIF NEW.status = 'Vendu' THEN
             v_stage := 'final_repaired';
             
@@ -77,6 +76,26 @@ BEGIN
         ELSE
             RETURN NEW; -- Not a relevant type or status
         END IF;
+        
+    ELSIF TG_TABLE_NAME = 'device_actions_reparations' THEN
+        -- Get device_id from related device_actions
+        SELECT da.device_id, u.organization_id
+        INTO v_device_id, v_organization_id
+        FROM device_actions da
+        JOIN users u ON u.id = da.creator
+        WHERE da.id = NEW.action_id;
+        
+        -- Handle repair statuses from device_actions_reparations
+        CASE NEW.status
+            WHEN 'En cours de réparation' THEN
+                v_stage := 'post_diag';
+            WHEN 'Terminé' THEN  
+                v_stage := 'repaired';
+            WHEN 'Abandon - démontage' THEN
+                v_stage := 'deee';
+            ELSE
+                RETURN NEW; -- Not a relevant repair status
+        END CASE;
     ELSE
         RETURN NEW; -- Unknown trigger context
     END IF;
@@ -250,10 +269,6 @@ BEGIN
         v_result_value := v_added_value;
     END IF;
     
-    -- Calculate max_loss using the specific formula
-    -- max_loss = -(Achat_prix + Achat_transport + Cout_diag)
-    v_max_loss := -(v_purchase_price + v_transport_cost + v_diagnostic_cost);
-    
     -- Store results in device_actions_budget
     IF TG_TABLE_NAME = 'device_actions_reparations' THEN
         -- Use the related device_actions.id
@@ -263,7 +278,7 @@ BEGIN
             prelog_cost, postlog_cost, pallet_cost, film_cost,
             consumables_cost, aftersales_cost, energy_cost, 
             diagnostic_cost, repair_cost, margin, storage_cost, 
-            disassembly_cost, spareparts_cost, max_loss, prediag_addedvalue
+            disassembly_cost, spareparts_cost, added_value
         ) VALUES (
             (SELECT creator FROM device_actions WHERE id = NEW.action_id),
             NEW.action_id,
@@ -271,7 +286,7 @@ BEGIN
             v_prelog_cost, v_postlog_cost, v_pallet_cost, v_film_cost,
             v_consumables_cost, v_aftersales_cost, v_energy_cost,
             v_diagnostic_cost, v_repair_cost, v_margin, v_storage_cost,
-            v_disassembly_cost, v_spareparts_cost, v_max_loss, v_result_value
+            v_disassembly_cost, v_spareparts_cost, v_result_value
         );
     ELSE
         -- Use NEW.id directly for device_actions
@@ -281,14 +296,14 @@ BEGIN
             prelog_cost, postlog_cost, pallet_cost, film_cost,
             consumables_cost, aftersales_cost, energy_cost, 
             diagnostic_cost, repair_cost, margin, storage_cost, 
-            disassembly_cost, spareparts_cost, max_loss, prediag_addedvalue
+            disassembly_cost, spareparts_cost, added_value
         ) VALUES (
             NEW.creator, NEW.id,
             v_sale_price, v_purchase_price, v_transport_cost, v_cleaning_cost,
             v_prelog_cost, v_postlog_cost, v_pallet_cost, v_film_cost,
             v_consumables_cost, v_aftersales_cost, v_energy_cost,
             v_diagnostic_cost, v_repair_cost, v_margin, v_storage_cost,
-            v_disassembly_cost, v_spareparts_cost, v_max_loss, v_result_value
+            v_disassembly_cost, v_spareparts_cost, v_result_value
         );
     END IF;
     

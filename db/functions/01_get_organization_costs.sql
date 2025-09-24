@@ -20,8 +20,8 @@ BEGIN
         'energy_cost', COALESCE(const_cost_energy, 0),
         'disassembly_cost', COALESCE(const_cost_disassembly, 0),
         'aftersales_rate', COALESCE(const_cost_aftersales_rate, 0.07),
-        'margin_rate', COALESCE(const_cost_margin_rate, 0.05),
-        'film_cost', COALESCE(const_cost_film, 0.6)
+        'margin_rate', COALESCE(const_cost_margin_rate, 0.05)
+       
     )
     INTO v_costs
     FROM organizations
