@@ -14,31 +14,40 @@ Est-ce qu’on crée une seule grand table avec plein de champs mais pas tous tj
 Etapes de calcul
 Au niveau de la référence appareil (device_ref)
 
-Dans device_references, avoir un calcul de prix d’achat max :
-Achat_prix_max  =  {[Prix de vente estimé] – SOMME [Achat_transport ; Cout_nettoyage ; Cout_log_pre ; Cout_log_post ; Cout_palette ; Cout_film ; Cout_consommableNettoyage ; Cout_SAV ; Cout_energie ; Cout_diag_est ; Marge_DN ; Cout_stockage ; Coût-pièce_avg ; Cout_rép_est] * P(reconditionnement) } - {SOMME [Achat_transport ; Cout_log_pre ; Cout_energie ; Cout_diag_est ; Cout_stockage ; Cout_démontage ; Coût-pièce ]  *[1- P(reconditionnement)]}
+Dans device_references, avoir un calcul de prix d’achat max + sale_price + methode utilisée (pour sale_price) :
+Achat_prix_max  =  {[Prix de vente estimé] – SOMME [Achat_transport ; Cout_nettoyage ; Cout_log_pre ; Cout_log_post ; Cout_palette ; Cout_film ; Cout_consommableNettoyage ; Cout_SAV ; Cout_energie ; Cout_diag_est ; Marge_DN ; Cout_stockage ; Coût-pièce_avg ; Cout_rép_est]} * P(reconditionnement) - {SOMME [Achat_transport ; Cout_log_pre ; Cout_energie ; Cout_diag_est ; Cout_stockage ; Cout_démontage ; Coût-pièce ]  *[1- P(reconditionnement)]}
 Pas besoin de calculer la viabilité économique au niveau deviceref car 0.
+Trigger : on_update quand price_new is not null and year_production is not null and brand_id is not null and device_service_sub_category_id is not null
+Autres triggers, à discuter ensemble : 
+On insert to sales_import
+On insert to devices
+Utile si on a le timing 7j (cf plus bas), pour alléger
+Bien ça et pas device_actions.type=Réception car si partenaire, device_actions.type encore inconnu au 25/09. Le but est de calculer vrt à la 1e création de l’appareil, que ce soit Doneo ou partenaire.
+A discuter ensemble : Max veut toujours avec devices_refs à jour. Si je vends le modele X, update sur deviceref du modele X. Mais aussi update sur tous les deviceref ayant le meme brand_grade. Et ce script est lourd à faire tourner sur chaque ligne. Si trop lourd, idée d’avoir : 
+Une table intermédiaire avec org, qual_grade, brand_grade et le calcul pour chaque, mis à jour à chaque vente >> permet d’update les devices_refs facilement si methode=2 ou 3
+Si lourd, pk pas avoir un update des lignes non-updatées sur les 7 derniers jours, ce qui fait que c’est moins lourd à chaque run
 
 Appareil – étape 1 – Calcul du budget résiduel avant Mise en Test 
 Trigger :
-Reception du device si device_references.price_new is not null
-Sinon, on edit to device_reference if price_new is not null > run for every device with this device_ref_id
+On insert in device_actions where type=Réception, if device_references.price_new is not null and year_production is not null and brand_id is not null and device_service_sub_category_id is not null
+Sinon, on edit to device_reference if price_new is not null > run for every device with this device_ref_id and device.status = ‘En attente de mise en test’
 Cette étape permet d’évaluer l’intérêt de la mise en test.
 Même calcul que celui fait précédemment dans devices_references, avec comme modifications :
 Achat_transport dépend ici du pricing transport du lot d’achat et plus d’une moyenne.
 Achat_prix_max devient Achat_prix et dépend du lot d’achat.
-Budget Résiduel Pré-diag = {[Prix de vente estimé] – SOMME [Achat_prix ; Achat_transport ; Cout_nettoyage ; Cout_log_pre ; Cout_log_post ; Cout_palette ; Cout_film ; Cout_consommableNettoyage ; Cout_SAV ; Cout_energie ; Cout_diag_est ; Marge_DN ; Cout_stockage_est; Coût-pièce ; Cout_rép_est] * P(reconditionnement) } - {SOMME [Achat_prix ; Achat_transport ; Cout_log_pre ; Cout_energie ; Cout_diag_est ; Cout_stockage_est; Cout_démontage ;  Coût-pièce  ]  *[1- P(reconditionnement)]}
+Budget Résiduel Pré-diag = {[Prix de vente estimé] – SOMME [Achat_prix ; Achat_transport ; Cout_nettoyage ; Cout_log_pre ; Cout_log_post ; Cout_palette ; Cout_film ; Cout_consommableNettoyage ; Cout_SAV ; Cout_energie ; Cout_diag_est ; Marge_DN ; Cout_stockage_est; Coût-pièce ; Cout_rép_est]} * P(reconditionnement) - {SOMME [Achat_prix ; Achat_transport ; Cout_log_pre ; Cout_energie ; Cout_diag_est ; Cout_stockage_est; Cout_démontage ;  Coût-pièce  ]  *[1- P(reconditionnement)]}
 
 
 Appareil – étape 2 – Calcul du budget résiduel après la mise en test 
 Trigger : on insert in device_actions where type=Mise en test.
 Principale modif : Cout_diag_est qui se précise car on connait l’owner du diag et donc son taux horaire (from users).
 Cette étape permet d’évaluer l’intérêt de poursuivre la réparation après la mise en test : 
-Budget Résiduel Post-diag = {[Prix de vente estimé] – SOMME [Achat_prix ; Achat_transport ; Cout_nettoyage ; Cout_log_pre ; Cout_log_post ; Cout_palette ; Cout_film ; Cout_consommableNettoyage ; Cout_SAV ; Cout_energie ; Cout_diag_est ; Marge_DN ; Cout_stockage_est; Coût-pièce; Cout_rép_est ] * P(reconditionnement) } - {SOMME [Achat_prix ; Achat_transport;, Cout_log_pre ; Cout_energie; Cout_diag_est; Cout_stockage_est; Cout_démontage ; Coût-pièce ]  *[1- P(reconditionnement)]}
+Budget Résiduel Post-diag = {[Prix de vente estimé] – SOMME [Achat_prix ; Achat_transport ; Cout_nettoyage ; Cout_log_pre ; Cout_log_post ; Cout_palette ; Cout_film ; Cout_consommableNettoyage ; Cout_SAV ; Cout_energie ; Cout_diag_est ; Marge_DN ; Cout_stockage_est; Coût-pièce; Cout_rép_est ]} * P(reconditionnement) - {SOMME [Achat_prix ; Achat_transport;, Cout_log_pre ; Cout_energie; Cout_diag_est; Cout_stockage_est; Cout_démontage ; Coût-pièce ]  *[1- P(reconditionnement)]}
 
 Appareil – étape 3 – Calcul du budget résiduel après diagnostic 
-Trigger : on insert in device_action_reparations where status=En cours de réparation
+Trigger : on insert in device_action_reparations where status=Attente validation diagnostic
 Cette étape permet d’évaluer l’intérêt de poursuivre la réparation : 
-Budget Résiduel réparation = {[Prix de vente estimé] – SOMME [Achat_prix ; Achat_transport ; Cout_nettoyage ; Cout_log_pre ; Cout_log_post ; Cout_palette ; Cout_film ; Cout_consommableNettoyage ; Cout_SAV ; Cout_energie ; Cout_diag_reel ; Marge_DN ; Cout_stockage_est; Coût-pièce ; Cout_rép_est] 
+Budget Résiduel réparation = [Prix de vente estimé] – SOMME [Achat_prix ; Achat_transport ; Cout_nettoyage ; Cout_log_pre ; Cout_log_post ; Cout_palette ; Cout_film ; Cout_consommableNettoyage ; Cout_SAV ; Cout_energie ; Cout_diag_reel ; Marge_DN ; Cout_stockage_est; Coût-pièce ; Cout_rép_est] 
 
 Etape 4.1 : Calcul de la valeur ajoutée créée si appareil réparé
 Trigger : on insert in device_action_reparations where status=Terminé
@@ -59,7 +68,7 @@ Valeur ajoutée (DEEE) = - SOMME [Achat_prix ; Achat_transport ; Cout_nettoyage 
 Autres triggers
 On pourrait penser qu’il faut recalculer prix_achat si update on device_references.price_new >> mais non car ce prix neuf va évoluer dans le temps, c’est normal. Pour un device donné, on considère le prix neuf saisi lors de la réception et pas un autre, ça ne bouge pas. 
 On update on purchase_lot, si update on pricing or transport type or value, refaire tourner pour tous les appareils du lot, peu importe leur statut.
-Mise à jour des données device_ref (achat_prix_max, viabilité, probabilités de reconditionnement) :
+On insert sales_import, pour mise à jour des données device_ref (achat_prix_max, probabilités de reconditionnement).
 Toutes les nuits, pour l’historique.
 Ne pas refaire tourner le script pour les devices car on considère que les calculs sont faits une fois avec les chiffres dispos sur le moment et pas à refaire ensuite.
 
@@ -80,8 +89,16 @@ and sales_invoice_import.percent_new_price >= 0.25
 Prix de vente estimé = min(sales_invoice_import.percent_new_price) * price_new from device_references
 Sinon si au moins 30 devices avec :
 device.status=Vendu
-and device_action_quality.quality_grade = current_device.quality_grade 
-and brand.grade=current_device.brand_grade (device.device_reference_id > device_reference.brand_id > brands.grade)
+and device_action_quality.quality_grade = current_device.reception_grade  
+and brand=current_device.brand
+and sales_invoice_import.percent_new_price >= 0.25
+and sales_invoice_import.created_at >= 6 months ago
+and organization_id=current_organization_id
+Prix de vente estimé = price_new from device_references * avg(sales_invoice_import. percent_new_price)
+Sinon si au moins 30 devices avec :
+device.status=Vendu
+and device_action_quality.quality_grade = current_device.reception_grade  
+and device_service_subcartegory = current_device.device_service_subcartegory 
 and sales_invoice_import.percent_new_price >= 0.25
 and sales_invoice_import.created_at >= 6 months ago
 and organization_id=current_organization_id
@@ -89,24 +106,39 @@ Prix de vente estimé = price_new from device_references * avg(sales_invoice_imp
 Sinon from sales_purchase_pricing_matrix, get row with >> pas de trigger car c’est une grille tarifaire fixe
 supplier_id = device owner organization_id
 and client_id join clients on client_id = clients.id where clients.name=Generic_reception and clients. owner_id = device owner organization_id
-and internal_grade = current_device.quality_grade 
+and internal_grade = current_device.reception_grade 
 and age= current_device. age (current year MINUS device_ref.year_production)
 and organization_id=current_organization_id
 Prix de vente estimé = price_new from device_references * sales_purchase_pricing_matrix.const_percent (for the only one row found with the filters)
 
-. Trigger par device_ref : idem sauf que le but est juste de calculer sale_price et achat_prix_max, sur chacun des 4 grades qualité.
-Seules modifs : 
-Bronze :
-Check des critères 1-2.
-Si rien, critère 3 .
-Si résultat <20% mettre 20%.
-Silver :
-Idem sur 1-2-3.
-Puis check de si résultat retenu >= saleprice_bronze
-Si oui on retient ce résultat.
-Sinon prendre le critère suivant. Si le critère retenu était 2 mais on se rend compte que ce résultat < saleprice_bronze alors on va check le critère 3.
-Si au final critère 3 < saleprice_bronze ou <20% du prixneuf >> on prend 20% du prix neuf.
-
+. Trigger par device_ref : idem sauf que le but est juste de calculer sale_price et achat_prix_max, sur chacun des 4 grades qualité. Et d’indiquer quelle méthode a été retenue.
+Process : 
+Bronze : faire les 3 étapes.
+Calculer silver, gold et platinum sur les 3 étapes.
+If silver>bronze then ok go on. Else retraitement de silver :
+Si gold > bronze then silver=median(bronze,silver) et methode(silver)=99
+Si gold pertinent car gold<bronze and gold>silver >> on considère que le problème provient du bronze, qui est surévalué : 
+Si bronze était avec méthode 1 alors tester si bronze(methode2)<silver >>> if yes, then save this value as bronze and methode(bronze)=99. Silver does not change and methode(silver)=99.
+Else if no, bronze(methode3)<silver >>> if yes, then save this value as bronze and methode(bronze)=99. Silver does not change and methode(silver)=99.
+Else bronze=silver*0.9 and methode(bronze)=99. Silver does not change and methode(silver)=99.
+Si gold non pertinent car gold<silver<bronze : le pb provient de silver
+Test silver(methode2)>bronze. If yes, silver=silver(methode2) and methode(silver)=99.
+Else if silver(methode3)>bronze. If yes, silver=silver(methode3) and methode(silver)=99.
+Else silver=null and methode(silver)=99.
+If gold>silver then ok go on. Else retraitement de gold:
+Si platinum>silver then gold=median(silver,gold) et methode(gold)=99
+Si platinum pertinent car platinum<silver and platinum>gold >> on considère que le problème provient du silver, qui est surévalué : 
+Si silver était avec méthode 1 alors tester si silver(methode2)<gold >>> if yes, then save this value as silverand methode(silver)=99. gold does not change and methode(gold)=99.
+Else if no, silver(methode3)<gold >>> if yes, then save this value as silverand methode(silver)=99. gold does not change and methode(gold)=99.
+Else silver=gold*0.9 and methode(silver)=99. gold does not change and methode(gold)=99.
+Si platinum non pertinent car platinum<gold<silver : le pb provient de gold
+Test gold(methode2)>silver. If yes, gold=gold(methode2) and methode(gold)=99.
+Else if gold(methode3)>silver. If yes, gold=gold(methode3) and methode(gold)=99.
+Else gold=null and methode(gold)=99.
+If platinum>gold then ok go on. Else retraitement de platinum :
+platinum=gold*1.1
+methode(platinum)=99
+>> calcul d’achat_prix_max et insert into devices_references : sale_price, max_purchase_price et method_calculation, pour chacun des grades (12 champs).
 
 Achat_prix 
 A partir du lot d’achat, soit intégrer le prix d’achat via le module dédié manuellement par appareil ou en % de la valeur neuve, conformément à une grille tarifaire ou encore à une valeur manuelle intégré par un opérateur de la direction des achats. 
@@ -207,11 +239,11 @@ Marge_DN = Taux % x Prix de vente estimé
 Taux = const_cost_margin_rate  from organizations
 
 Cout_stockage
-Cout_stockage estimé 
-Toutes les nuits, faire moyenne sur les 180 derniers jours ouvrés (bien ouvrés, pas calendaires), sur ce type de service_subcategory, uniquement sur current_organization_id et non sur toute la database.
+Cout_stockage estimé (stage : pre_test)
+Faire moyenne sur les 180 derniers jours ouvrés (bien ouvrés, pas calendaires), sur ce type de service_subcategory, uniquement sur current_organization_id et non sur toute la database.
 
-Sur le device, si le réel dépasse la moyenne, alors appliquer réel.
-Cout_stockage réel = const_cost_disassembly from organizations x Diff[Date de Réception – Date du jour
+Sur le device, si le réel dépasse la moyenne, alors appliquer réel. (stage : après pre_test)
+Cout_stockage réel = const_cost_storage from organizations x Diff[Date de Réception – Date du jour
 Appareil réparé : calcul à faire jusqu’à ce que le statut passe en « Vendu »
 Appareil démonté : calcul à faire jusqu’à ce que le statut passe en « Démontage terminé »
 
@@ -259,3 +291,69 @@ Count(devices) with same device_service_subcat and exists (device_action_reparat
 Count(devices) with same device_service_subcat and device_action (last action) . status = Démontage terminé
 ]
 
+
+
+
+
+
+Feedbacks Julien
+Github here
+
+03_saleprice
+. Get current device quality grade (most recent) >> cette partie est à retirer je pense car on n'a pas le quality_grade de l'appareil lors du calcul et on n’en a pas besoin. Je me suis trompé dans le doc ci-dessous >> updaté en jaune, on n’a besoin QUE du reception_grade.
+
+. Option 1 : pk ne pas mettre device_quality_grade = v_reception_grade directement dans le where du sold_devices ? Car là, j’ai l’impression qu’on sélectionne + d’appareils que nécessaire, sans les utiliser. Donc autant en sélectionner moins et ne pas refilter ensuite >> donc juste avoir SELECT COUNT(*), MIN(percent_new_price) FROM sold_devices
+Qu’en dis-tu ?
+>> left join lateral n’est pas très optimal donc mieux vaut faire un select ainsi et refilter
+
+. Option 2 : idem sur device_quality_grade à éventuellement mettre directement dans le where du sold_devices et simplifier le filtre de sold_devices.
+
+. Option 4 : merci, en effet je n’avais pas ajouté le field age (device_age).
+Si tu veux simplifier la query client, tu peux considérer que client_id = current org_id. J’ai construit le truc comme ça pour simplifier les miennes, histoire de dire que la grille de pricing théorique est la seule avec supplier_id = client_id = org_id. Donc suppr c.name et c.owner_id et juste garder c.id
+sppm.brand_grade = v_brand_grade; doit disparaitre et être remplacé par sppm.device_age = l’age du device (current_year MINUS year from devices_ref); If >10 then consider sppm.device_age=10
+sppm.internal_grade = COALESCE(v_quality_grade, v_reception_grade) >> doit être simplement sppm.internal_grade = v_reception_grade
+
+04 et 05
+Transport et purchase sont très liés, pk les avoir séparés ? 
+>> On aurait pu, à faire p-e plus tard
+
+07 device_budget
+. IF v_price_new IS NULL OR v_price_new <= 0 THEN >> inclure aussi : and year_production is not null and brand_id is not null and device_service_sub_category_id is not null
+
+. Trigger ‘Abandon - démontage’ doit être : 
+Soit ilike ‘Abandon - démontage’ 
+Soit =’Abandon - démontage (diagnostic)’ or =’Abandon - démontage (réparation)’
+
+. Il manque le trigger de quand : 
+On a une reception avec devices_references.price_new is null or year or brand or service_subcat >> le calcul ne se lance pas
+Lorsque les datas devices_references sont saisies, il faut lancer le calcul sur chacun des devices de ce device_ref. 
+>> Est-ce que le trigger est : 
+on_update_device_ref ?
+ou est-ce que l’update device_ref trigger un insert dans device_actions (avec par ex type=’Modification appareil’) et donc on crée un nouveau trigger dans ton script pour device_actions=’Modification appareil’ ?
+
+. pre_test : AND EXTRACT(DOW FROM da.created_at) BETWEEN 1 AND 5;
+Je ne suis pas sur de moi, mais j’ai l’impression que ça ne fait qu’exclure les weekends, mais ça ne transorme pas la daterange en 90j ouvrés (lundi-vendredi), non ? 
+Si j’ai raison, ce n’est pas dramatique et retirons cette partie, c’est du détail et 90j iront très bien.
+
+. post_diag : 
+Trigger est en fait ‘Attente validation diagnostic’, désolé, erreur de ma part >> corrigée en jaune ci-dessus
+diag_duration est ok ainsi pour le moment, ensuite on remplacera par les fameuses timelines, qu’on doit faire après.
+A FAIRE HAMZA : v_storage_cost = 0 : pk ? Cf explications dans la partie dédiée ci-dessus.
+A FAIRE HAMZA (timelines) : dab.diagnostic_cost est incorrect. Désormais c’est le temps réel : 
+Durée diag réelle : NOW MINUS device_actions.created_at where type=Mise en test * u.hourly_cost
+
+.  'repaired'
+A FAIRE HAMZA : v_storage_cost 
+A FAIRE HAMZA (timelines) : dab.repair_costest incorrect. Désormais c’est le temps réel : 
+Durée réparation réelle : NOW MINUS device_actions_reparation.created_at where status=En cours de réparation
+* u.hourly_cost
+
+.  'deee' THEN
+A FAIRE HAMZA : v_storage_cost 
+
+. WHEN 'final_repaired', 'final_deee' THEN
+v_storage_cost : pas *0.35 mais * const_cost_storage from organizations. Dsl, oubli de ma part, rajouté ci-dessus + dans la table.
+
+Question générale
+Une différence entre « archived is false » (que j’utilise) et « archived = false » (que tu utilises) ?
+>> mieux is

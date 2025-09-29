@@ -48,16 +48,16 @@ BEGIN
         SELECT organization_id INTO v_organization_id FROM users WHERE id = NEW.creator;
         
         -- Handle device_actions cases based on type and status
-        IF NEW.type = 'Réception' THEN
+        IF NEW.type = 'Réception' OR NEW.type = 'Modification données modèle' THEN
             -- Check if price_new exists (per documentation requirement)
-            SELECT dr.price_new
-            INTO v_price_new
+            SELECT dr.price_new, dr.year_production, dr.brand_id, dr.service_sub_category_id
+            INTO v_price_new, v_device_year, v_brand_id, v_service_sub_category_id
             FROM devices d
             JOIN device_references dr ON dr.id = d.device_reference_id
             WHERE d.id = NEW.device_id;
             
             -- Skip if no price_new
-            IF v_price_new IS NULL OR v_price_new <= 0 THEN
+            IF v_price_new IS NULL OR v_price_new <= 0 OR v_device_year IS NULL OR v_brand_id IS NULL OR v_service_sub_category_id IS NULL THEN
                 RETURN NEW;
             END IF;
             
@@ -87,11 +87,13 @@ BEGIN
         
         -- Handle repair statuses from device_actions_reparations
         CASE NEW.status
-            WHEN 'En cours de réparation' THEN
+            WHEN 'Attente validation diagnostic' THEN
                 v_stage := 'post_diag';
             WHEN 'Terminé' THEN  
                 v_stage := 'repaired';
-            WHEN 'Abandon - démontage' THEN
+            WHEN 'Abandon - démontage (diagnostic)' THEN
+                v_stage := 'deee';
+            WHEN 'Abandon - démontage (réparation)' THEN
                 v_stage := 'deee';
             ELSE
                 RETURN NEW; -- Not a relevant repair status
@@ -124,6 +126,8 @@ BEGIN
     v_aftersales_cost := v_sale_price * (v_org_costs->>'aftersales_rate')::numeric;
     v_margin := v_sale_price * (v_org_costs->>'margin_rate')::numeric;
     
+    -- calculate_storage_cost function call
+    v_storage_cost := calculate_storage_cost(v_device_id, v_organization_id,
     -- Stage-specific calculations
     CASE v_stage
         WHEN 'pre_test' THEN
@@ -147,7 +151,6 @@ BEGIN
             v_diagnostic_cost := COALESCE(v_diagnostic_cost, 0);
             v_repair_cost := COALESCE(v_repair_cost, 0);
             v_spareparts_cost := 0;
-            v_storage_cost := 0;
             
         WHEN 'post_test' THEN
             -- User-specific diagnostic cost
@@ -164,7 +167,6 @@ BEGIN
             v_diagnostic_cost := COALESCE(v_diagnostic_cost, 7.5);
             v_repair_cost := COALESCE(v_diagnostic_cost * 3, 22.5); -- Estimate
             v_spareparts_cost := 0;
-            v_storage_cost := 0;
             
         WHEN 'post_diag', 'repaired', 'deee' THEN
             -- Real costs from budget table and spare parts
@@ -182,7 +184,6 @@ BEGIN
             
             v_diagnostic_cost := COALESCE(v_diagnostic_cost, 0);
             v_repair_cost := COALESCE(v_repair_cost, 0);
-            v_storage_cost := COALESCE(v_storage_cost, 0);
             
             IF v_stage = 'deee' THEN
                 v_repair_cost := 0; -- No repair for DEEE
@@ -202,25 +203,8 @@ BEGIN
             FROM sparepart_requests spr
             WHERE spr.device_id = v_device_id AND spr.archived = false;
             
-            -- Calculate actual storage time
-            IF v_stage = 'final_repaired' THEN
-                SELECT EXTRACT(DAY FROM NEW.last_edit - da_rec.created_at) * 0.35
-                INTO v_storage_cost
-                FROM device_actions da_rec
-                WHERE da_rec.device_id = v_device_id AND da_rec.type = 'Réception'
-                ORDER BY da_rec.created_at ASC LIMIT 1;
-            ELSE
-                v_repair_cost := 0; -- No repair for DEEE
-                SELECT EXTRACT(DAY FROM NEW.last_edit - da_rec.created_at) * 0.35
-                INTO v_storage_cost
-                FROM device_actions da_rec
-                WHERE da_rec.device_id = v_device_id AND da_rec.type = 'Réception'
-                ORDER BY da_rec.created_at ASC LIMIT 1;
-            END IF;
-            
             v_diagnostic_cost := COALESCE(v_diagnostic_cost, 0);
             v_repair_cost := COALESCE(v_repair_cost, 0);
-            v_storage_cost := COALESCE(v_storage_cost, 0);
     END CASE;
     
     -- Calculate refurbishment probability for budget stages

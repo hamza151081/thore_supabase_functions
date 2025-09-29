@@ -8,8 +8,8 @@ DECLARE
     v_price_new NUMERIC;
     v_device_ref_id UUID;
     v_reception_grade VARCHAR;
-    v_quality_grade VARCHAR;
-    v_brand_grade VARCHAR;
+    v_brand_id UUID;
+    v_service_sub_category_id UUID;
     v_device_year INTEGER;
     v_current_year INTEGER;
     v_count INTEGER;
@@ -17,11 +17,10 @@ DECLARE
     v_avg_percent NUMERIC;
 BEGIN
     -- Get device reference and price_new
-    SELECT dr.id, dr.price_new, b.grade, dr.year_production
-    INTO v_device_ref_id, v_price_new, v_brand_grade, v_device_year
+    SELECT dr.id, dr.price_new, dr.brand_id, dr.year_production, dr.service_sub_category_id
+    INTO v_device_ref_id, v_price_new, v_brand_id, v_device_year, v_service_sub_category_id
     FROM devices d
     JOIN device_references dr ON dr.id = d.device_reference_id
-    LEFT JOIN brands b ON b.id = dr.brand_id
     WHERE d.id = p_device_id;
     
     -- Get current device reception grade
@@ -34,15 +33,6 @@ BEGIN
     ORDER BY da.created_at DESC
     LIMIT 1;
     
-    -- Get current device quality grade (most recent)
-    SELECT daq.grade
-    INTO v_quality_grade
-    FROM device_actions da
-    JOIN device_actions_quality daq ON daq.action_id = da.id
-    WHERE da.device_id = p_device_id
-    AND da.type = 'Qualité'
-    ORDER BY da.created_at DESC
-    LIMIT 1;
     
     -- Current year for age calculation
     v_current_year := EXTRACT(YEAR FROM CURRENT_DATE);
@@ -90,11 +80,10 @@ BEGIN
                 LIMIT 1) as device_quality_grade
         FROM devices d
         JOIN device_references dr ON dr.id = d.device_reference_id
-        JOIN brands b ON b.id = dr.brand_id
         JOIN sales_invoice_import sii ON sii.device_id = d.id
         JOIN device_actions da ON da.device_id = d.id
         JOIN users u ON u.id = da.creator
-        WHERE b.grade = v_brand_grade
+        WHERE dr.brand_id= v_brand_id 
         AND da.status = 'Vendu'
         AND u.organization_id = p_organization_id
         AND sii.percent_new_price >= 0.25
@@ -103,23 +92,54 @@ BEGIN
     SELECT COUNT(*), AVG(percent_new_price)
     INTO v_count, v_avg_percent
     FROM sold_devices_brand
-    WHERE device_quality_grade = v_quality_grade;
+    WHERE device_quality_grade = v_reception_grade;
+    
+    IF v_count >= 30 AND v_avg_percent IS NOT NULL THEN
+        v_sale_price := v_price_new * v_avg_percent;
+        RETURN v_sale_price;
+    END IF;
+
+    -- Option 3: 30+ devices with same service sub-category (last 6 months)
+    WITH sold_devices_brand AS (
+        SELECT d.id, sii.percent_new_price,
+               -- Get quality grade for each device
+               (SELECT daq.grade 
+                FROM device_actions da2  
+                JOIN device_actions_quality daq ON daq.action_id = da2.id
+                WHERE da2.device_id = d.id 
+                AND da2.type = 'Qualité'
+                ORDER BY da2.created_at DESC 
+                LIMIT 1) as device_quality_grade
+        FROM devices d
+        JOIN device_references dr ON dr.id = d.device_reference_id
+        JOIN sales_invoice_import sii ON sii.device_id = d.id
+        JOIN device_actions da ON da.device_id = d.id
+        JOIN users u ON u.id = da.creator
+        WHERE dr.device_service_sub_category_id= v_service_sub_category_id
+        AND da.status = 'Vendu'
+        AND u.organization_id = p_organization_id
+        AND sii.percent_new_price >= 0.25
+        AND sii.created_at >= CURRENT_DATE - INTERVAL '6 months'
+    )
+    SELECT COUNT(*), AVG(percent_new_price)
+    INTO v_count, v_avg_percent
+    FROM sold_devices_brand
+    WHERE device_quality_grade = v_reception_grade;
     
     IF v_count >= 30 AND v_avg_percent IS NOT NULL THEN
         v_sale_price := v_price_new * v_avg_percent;
         RETURN v_sale_price;
     END IF;
     
-    -- Option 3: Use pricing matrix
+    
+    -- Option 4: Use pricing matrix
     SELECT v_price_new * sppm.const_percent
     INTO v_sale_price
     FROM sales_purchase_pricing_matrix sppm
-    JOIN clients c ON c.id = sppm.client_id
     WHERE sppm.supplier_id = p_organization_id
-    AND c.name = 'Generic_reception'
-    AND c.owner_id = p_organization_id
-    AND sppm.internal_grade = COALESCE(v_quality_grade, v_reception_grade)
-    AND sppm.brand_grade = v_brand_grade;
+    AND sppm.client_id = p_organization_id
+    AND sppm.internal_grade =  v_reception_grade
+    AND sppm.device_age = (CASE WHEN (v_current_year - v_device_year) > 10 THEN 10 ELSE (v_current_year - v_device_year) END)
     -- Note: Age criteria might need to be added to sales_purchase_pricing_matrix table
     -- Currently not implemented as it's not in the schema
     
