@@ -127,7 +127,7 @@ BEGIN
     v_margin := v_sale_price * (v_org_costs->>'margin_rate')::numeric;
     
     -- calculate_storage_cost function call
-    v_storage_cost := calculate_storage_cost(v_device_id, v_organization_id,
+    v_storage_cost := calculate_storage_cost(v_device_id, v_organization_id, v_service_sub_category_id, v_stage);
     -- Stage-specific calculations
     CASE v_stage
         WHEN 'pre_test' THEN
